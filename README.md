@@ -1,13 +1,13 @@
 # MongoDB Aggregation Schema Analyzer
 
-Provides a JavaScript function to act like a _macro_ for generating a MongoDB Aggregation expression to introspect a collection of documents and infer its schema. The generated aggregation expression will construct the outline schema by inspecting a collection's documents, even where some or all are composed of a complex nested hierarchy of sub-documents. It descends through each document's nested fields collecting each sub-document and associated metadata into a flattened array of elements in the result.
+Provides a JavaScript function to act as a _macro_ to generate a MongoDB Aggregation expression to introspect a collection of documents and infer its schema. The generated aggregation expression will construct the outline schema by inspecting a collection's documents, even where some or all are composed of a complex nested hierarchy of sub-documents. It descends through each document's nested fields collecting each sub-document and associated metadata into a flattened array of elements in the result.
 
-Currently the function only supports MongoDB version 5+ due to the use of the _$getField_ operator. However, for earlier versions of MongoDB you can replace _$getField_ in this function's code with [@asya999](https://twitter.com/asya999)'s [getField() function](https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js) which performs the equivalent in older versions of MongoDB.
+Currently the function only supports MongoDB version 5+ due to the use of the _$getField_ operator. However, for earlier versions of MongoDB you can replace _$getField_ in the JavaScript library code with [@asya999](https://twitter.com/asya999)'s [getField() function](https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js) which performs the equivalent in older versions of MongoDB.
 
 
 ## Sample Collection Data Population
 
-> _Note, this step is only necessary if you haven't already got some MongoDB database collection that you want to introspect the schema for._
+> _Note, this step is only necessary if you haven't already got a MongoDB database collection that you want to introspect the schema for._
 
 Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connect to your MongoDB database and then execute the following to drop any old version of the database (if it exists) and populate a new collection with two made-up documents, each consisting of a hierarchy of nested sub-documents.
 
@@ -141,9 +141,9 @@ db.mydata.insertMany([
 
 ```
 
-## Load The Extract Schema JavaScript Functions
+## Load The Schema Extraction JavaScript Functions
 
-Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connected to your MongoDB database and then execute the following to load the `extractSchema()` JavaScript function and related supporting functions, ready to be used by the subsequent Aggregation pipeline.
+Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connected to your MongoDB database, execute the following to load the `extractSchema()` JavaScript function and related supporting functions, ready to be used by the subsequent aggregation pipeline.
 
 ```javascript
 load('mongo-agg-extract-schema.js');
@@ -152,9 +152,9 @@ load('mongo-agg-extract-schema.js');
 
 ## Run The Analyze Schema Aggregation Pipeline
 
-Define a pipeline to use the `extractSchema()` function to capture and output the schema for collections and execute the pipeline:
+Define a pipeline to use the `extractSchema()` function to capture and output the schema for the collection and execute the pipeline:
 
-> _Change the value of the `sampleSize` if you want to sample less or more than 10,000 documents from the collection (the larger this value, the longer the process will take to run. Also, where indicated in the code comment, add the `maxElements=???` number parameter with an appropriate value (default is _500_) to `extractSchema()` if you believe there are more than 500 fields in some of the collection's documents to be inspected (you will see a warning in the aggregation's output the first time you run it if it detects this is not the case)_
+> _Change the value of the `sampleSize` variable if you want to sample less or more than 10,000 documents from the collection (the larger this value, the longer the process will take to run). Also, where indicated in the code comment, add the `maxElements=???` number parameter with an appropriate value to `extractSchema()` (default is _500_) if you believe there are more than 500 fields in some of the collection's documents to be inspected (you will see a warning in the aggregation's output the first time you run it if it detects this is the case)_
 
 ```javascript
 var sampleSize = 10000;
@@ -165,7 +165,7 @@ var pipeline = [
   }},
 
   {"$replaceWith": 
-    extractSchema()    // or: extractSchema(maxElements=1000)
+    extractSchema()      // or: extractSchema(maxElements=1000)
   },
   
   {"$unwind": 
@@ -216,7 +216,7 @@ db.mydata.aggregate(pipeline);
 
 ## Example Pipeline Output
 
-For the sample data set, this should yield the following result output:
+For the sample data set, the executed pipeline should yield the following result output:
 
 ```javascript
 [
