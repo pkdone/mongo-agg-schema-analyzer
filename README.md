@@ -12,7 +12,7 @@ Currently the function only supports MongoDB version 5+ due to the use of the _$
 Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connect to your MongoDB database and then execute the following to drop any old version of the database (if it exists) and populate a new collection with two made-up documents, each consisting of a hierarchy of nested sub-documents.
 
 ```javascript
-use mongo-agg-analyze-schema;
+use mongo-agg-schema-analyzer;
 db.dropDatabase();
 
 db.mydata.insertMany([
