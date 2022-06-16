@@ -4,6 +4,8 @@ Provides a JavaScript function to act as a _macro_ to generate a MongoDB Aggrega
 
 Currently the function only supports MongoDB version 5+ due to the use of the _$getField_ operator. However, for earlier versions of MongoDB you can replace _$getField_ in the JavaScript library code with [@asya999](https://twitter.com/asya999)'s [getField() function](https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js) which performs the equivalent in older versions of MongoDB.
 
+&nbsp;
+
 
 ## Sample Collection Data Population
 
