@@ -141,6 +141,9 @@ db.mydata.insertMany([
 
 ```
 
+&nbsp;
+
+
 ## Load The Schema Extraction JavaScript Functions
 
 Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connected to your MongoDB database, execute the following to load the `extractSchema()` JavaScript function and related supporting functions, ready to be used by the subsequent aggregation pipeline.
@@ -149,6 +152,9 @@ Via the [MongoDB Shell](https://www.mongodb.com/docs/mongodb-shell/), connected 
 load('mongo-agg-extract-schema.js');
 
 ```
+
+&nbsp;
+
 
 ## Run The Analyze Schema Aggregation Pipeline
 
@@ -212,6 +218,8 @@ db.mydata.aggregate(pipeline);
 ```
 
 > _Note, change the name of the collection from `mydata` to the name of your collection in the `aggregate()` command if you are not using the mock data set._
+
+&nbsp;
 
 
 ## Example Pipeline Output
@@ -459,6 +467,9 @@ For the sample data set, the executed pipeline should yield the following result
 ]
 
 ```
+
+&nbsp;
+
 
 ## Running The 'Raw' Extract Schema Function
 
