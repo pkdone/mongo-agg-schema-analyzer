@@ -2,7 +2,7 @@
 
 Provides a JavaScript function to act as a _macro_ to generate a MongoDB Aggregation expression to introspect a collection of documents and infer its schema. The generated aggregation expression will construct the outline schema by inspecting a collection's documents, even where some or all are composed of a complex nested hierarchy of sub-documents. It descends through each document's nested fields collecting each sub-document and associated metadata into a flattened array of elements in the result.
 
-Currently the function only supports MongoDB version 5+ due to the use of the _$getField_ operator. However, for earlier versions of MongoDB you can replace _$getField_ in the JavaScript library code with [@asya999](https://twitter.com/asya999)'s [getField() function](https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js) which performs the equivalent in older versions of MongoDB.
+Currently the function only supports MongoDB version 5+ due to the use of the [$getField](https://www.mongodb.com/docs/manual/reference/operator/aggregation/getField/) operator. However, for earlier versions of MongoDB you can replace _$getField_ in the JavaScript library code with [@asya999](https://twitter.com/asya999)'s [getField() function](https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js) which performs the equivalent in older versions of MongoDB.
 
 &nbsp;
 
