@@ -182,7 +182,7 @@ function addCurrentObjectsChildrenToQueue(objectsToProcessQueue) {
  * @asya999's getField() function which performs the equivalent, at:
  * https://github.com/asya999/bits-n-pieces/blob/master/scripts/getField.js
  *
- * @param {Number} [maxElements=1000]  [OPTIONAL] The maximum number of sub-documents to flatten
+ * @param {Number} [maxElements=500]   [OPTIONAL] The maximum number of sub-documents to flatten
  *                                     per document (the resulting aggregation expression issues a
  *                                     warning in the aggregation's output if this number isn't
  *                                     sufficient to allow a document's hierarchy to be fully
