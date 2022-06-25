@@ -1,186 +1,3 @@
-//
-// Macro to generate the aggregation expression to find each field for a given object that maps to
-// a value which is an array or a sub-document (object) and return only those fields, collected
-// together in an array
-//
-function getNestedChildrenOfSubdoc(subdoc) {
-  return {
-    // Loop through each field in the current object
-    "$reduce": {
-      "input": {"$objectToArray": subdoc},
-      "initialValue": [],
-      "in": {
-        "$concatArrays": [
-          "$$value",
-          {"$switch": {
-            "branches": [
-              // If there's one object hanging off this field, just add that with additional metadata
-              {"case": {"$eq": [{"$type": "$$this.v"}, "object"]}, "then": [{
-                "key" : "$$this.k", 
-                "value" : "$$this.v",
-              }]},
-              // If there's an array hanging off this field, unpack and add each array object with additional metadata
-              {"case": {"$eq": [{"$type": "$$this.v"}, "array"]}, "then": {
-                "$map": {
-                  "input": "$$this.v",
-                  "as": "element",
-                  "in": {
-                    "key" : "$$this.k",                                                                
-                    "value" : {"$cond": [{"$eq": [{"$type": "$$element"}, "object"]}, "$$element", {"<arrayitem>": "$$element"}]},
-                  }
-                }
-              }},
-            ],
-            // Otherwise this field does not correspond to an object or array so don't add the field in the result array
-            "default": [], 
-          }}            
-        ]
-      }
-    }
-  };
-}
-
-
-//
-// Macro to generate the aggregation expression to for assembling the top level metadata and schema
-// metadata for an object (which will be either the root document or one of potentially many
-// sub-documents
-//
-function buildObjectMetadataArrays(object, currentResultPosition) {
-  return [
-    // Capture the top level metadata for the object
-    [{"k": "id", "v": currentResultPosition}],
-    [{"k": "depth", "v": {"$getField": {"field": "depth", "input": object}}}],
-    [{"k": "index", "v": {"$getField": {"field": "index", "input": object}}}],
-    [{"k": "subdocpath", "v": {"$getField": {"field": "subdocpath", "input": object}}}],                  
-    
-    // Capture the schema for each field for this new object with its name, value and type
-    [{"k": "schema", "v": {
-      "$map": {
-        "input": {"$objectToArray": {"$getField": {"field": "subdoc", "input": object}}},
-        "as": "field",
-        "in": {
-          "fieldname": "$$field.k",
-          "fieldvalue": {"$switch": {
-                          "branches": [
-                            {"case": {"$eq": [{"$type": "$$field.v"}, "array"]}, "then": "<array>"},
-                            {"case": {"$eq": [{"$type": "$$field.v"}, "object"]}, "then": "<object>"},
-                          ],
-                          "default": "$$field.v",
-                        }},                                                                                                     
-          "fieldtype": {"$type": "$$field.v"},                                
-        }
-      }
-    }}], 
-  ];
-}
-
-
-//
-// Macro to generate the aggregation expression to get the next object (if any) from the start of
-// the queue and capture its metadata including path, data type and relative position data
-//
-function captureCurrentObjectMetadata(currentResultsArray, objectsToProcessQueue, currentResultPosition, maxElements) {
-  return {
-    "$let": {
-      "vars": { 
-        // Get current object from the front of the queue
-        "currentObject": {"$first": objectsToProcessQueue},        
-      },
-      "in": {
-        // Concatenate current result array with current object's data, returning this new combined array as the result
-        "$concatArrays": [
-          currentResultsArray,
-          {"$cond": [
-            // Stop accumulating array elements if we have now reached the end of the list of nested sub-document objects
-            {"$ifNull": ["$$currentObject", false]},
-            {"$cond": [                     
-              {"$gte": [currentResultPosition, maxElements]},
-              [{"WARNING": "The 'maxElements' parameter wasn't set to a large enough value to fully traverse the document's nested content"}],
-              [{"$arrayToObject": [
-                {"$concatArrays": buildObjectMetadataArrays("$$currentObject", currentResultPosition)}
-              ]}],                  
-            ]},                         
-            [], 
-          ]},                         
-        ]
-      }
-    }
-  };
-}
-
-
-//
-// Macro to generate the aggregation expression to trim the first element, just inspected, from
-// the front of the queue and then add its direct children (if any) to the end of the queue, ready
-// to be processed in the future
-//
-function addCurrentObjectsChildrenToQueue(objectsToProcessQueue) {
-  return {
-    "$let": {
-      "vars": { 
-        // Get current object from the front of the queue      
-        "currentObject": {"$first": objectsToProcessQueue},
-      },
-      "in": {
-        "$let": {
-          "vars": { 
-            // Get current object's metadata
-            "queueSize": {"$size": objectsToProcessQueue},
-            "currentObjectChildren": getNestedChildrenOfSubdoc({"$getField": {"field": "subdoc", "input": "$$currentObject"}}),
-            "currentObjectIdx": {"$getField": {"field": "index", "input": "$$currentObject"}},
-            "currentSubdocPath": {"$getField": {"field": "subdocpath", "input": "$$currentObject"}},
-            "newDepthNumber": {"$add": [{"$getField": {"field": "depth", "input": "$$currentObject"}}, 1]},
-          },
-          "in": {
-            // Concatenate current queue array (minus its first object) with new child objects, returning this new combined array as the new version of the queue
-            "$concatArrays": [
-              // Chop off the first object of the queue of objects to inspect, because further below it will be decomposed into child objects
-              {"$cond": [
-                {"$gt": ["$$queueSize", 0]},
-                {"$slice": [objectsToProcessQueue, 1, {"$add": ["$$queueSize", 1]}]},
-                [],
-              ]},             
-              // Push the content of each field which is a child object or array to the end of the queue of elements to inspect
-              {"$cond": [
-                // MongoDB supports "100 levels of nesting for BSON documents" so no point in gong beyond that
-                {"$and": [{"$isArray": "$$currentObjectChildren"}, {"$lte": ["$$newDepthNumber", 100]}]},
-                // Loop through each field which is either a chold object or array of objects, adding each object to the queue
-                {"$reduce": { 
-                  "input": {"$range": [0, {"$size": "$$currentObjectChildren"}]},
-                  "initialValue": [],
-                  "in": {
-                    "$let": {
-                      "vars": { 
-                        "childObject": {"$arrayElemAt": ["$$currentObjectChildren", "$$this"]},
-                        "subdocPathSeperator": {"$cond": [{"$gt": [{"$strLenCP": "$$currentSubdocPath"}, 0]}, ".", ""]},                        
-                      },
-                      "in": {              
-                        "$concatArrays": [                            
-                          "$$value",
-                          [{
-                            // Add metadata to the object being added to the list including the actual object itself (keyed 'subdoc')
-                            "depth": "$$newDepthNumber",
-                            "index": {"$concat": ["$$currentObjectIdx", "_", {"$toString": "$$this"}]},
-                            "subdocpath": {"$concat": ["$$currentSubdocPath", "$$subdocPathSeperator", {"$getField": {"field": "key", "input": "$$childObject"}}]},
-                            "subdoc": {"$getField": {"field": "value", "input": "$$childObject"}},                    
-                          }],
-                        ]                
-                      }
-                    }                                
-                  }
-                }},                  
-                [],
-              ]},             
-            ]            
-          }
-        }
-      }      
-    }
-  };
-}
-
-
 /**
  * Macro to generate a MongoDB Aggregation expression to introspect a collection of documents and 
  * infer its schema. The generated aggregation expression will construct the outline schema by
@@ -219,7 +36,7 @@ function extractSchema(maxElements=500) {
       },      
       "in": {       
         // Add current sub-doc's metadata to result array 
-        "content": captureCurrentObjectMetadata("$$value.content", "$$value.objectsToProcessQueue", "$$this", maxElements),        
+        "content": captureCurrentObjectSchema("$$value.content", "$$value.objectsToProcessQueue", "$$this", maxElements),        
         // Add child objects of current sub-doc to the queue of array of items to be inspected later on (and remove the sub-doc just inspected)
         "objectsToProcessQueue": addCurrentObjectsChildrenToQueue("$$value.objectsToProcessQueue"),
       }          
@@ -228,11 +45,210 @@ function extractSchema(maxElements=500) {
 }
 
 
-//
-// TEST: getNestedChildrenOfSubdoc
-// Requires MongoDB version 5.1+
-// 
-function test_nestedChildren_1() {
+/**
+ * Macro to generate the aggregation expression to get the next object (if any) from the start of
+ * the queue and capture its schema metadata including path, data type and relative position data
+ */
+function captureCurrentObjectSchema(currentResultsArray, objectsToProcessQueue, currentResultPosition, maxElements) {
+  return {
+    "$let": {
+      "vars": { 
+        // Get current object from the front of the queue
+        "currentObject": {"$first": objectsToProcessQueue},        
+      },
+      "in": {
+        // Concatenate current result array with current object's data, returning this new combined array as the result
+        "$concatArrays": [
+          currentResultsArray,
+          {"$cond": [
+            // Stop accumulating array elements if we have now reached the end of the list of nested sub-document objects
+            {"$ifNull": ["$$currentObject", false]},
+            {"$cond": [                     
+              {"$gte": [currentResultPosition, maxElements]},
+              [{"WARNING": "The 'maxElements' parameter wasn't set to a large enough value to fully traverse the document's nested content"}],
+              [{"$arrayToObject": [
+                {"$concatArrays": buildArrayOfSchemaMetadataFields("$$currentObject", currentResultPosition)}
+              ]}],                  
+            ]},                         
+            [], 
+          ]},                         
+        ]
+      }
+    }
+  };
+}
+
+
+/**
+ * Macro to generate the aggregation expression to trim the first element, just inspected, from
+ * the front of the queue and then add its direct children (if any) to the end of the queue, ready
+ * to be processed in the future
+ */
+function addCurrentObjectsChildrenToQueue(objectsToProcessQueue) {
+  return {
+    "$let": {
+      "vars": { 
+        // Get current object from the front of the queue      
+        "currentObject": {"$first": objectsToProcessQueue},
+      },
+      "in": {
+        "$let": {
+          "vars": { 
+            // Get current object's metadata
+            "queueSize": {"$size": objectsToProcessQueue},
+            "currentObjectChildren": getNestedChildrenOfSubdoc({"$getField": {"field": "subdoc", "input": "$$currentObject"}}),
+            "currentObjectIdx": {"$getField": {"field": "index", "input": "$$currentObject"}},
+            "currentSubdocPath": {"$getField": {"field": "subdocpath", "input": "$$currentObject"}},
+            "newDepthNumber": {"$add": [{"$getField": {"field": "depth", "input": "$$currentObject"}}, 1]},
+          },
+          "in": {
+            // Concatenate current queue array (minus its first object) with new child objects, returning this new combined array as the new version of the queue
+            "$concatArrays": [
+              // Chop off the first object of the queue of objects to inspect, because further below it will be decomposed into child objects
+              {"$cond": [
+                {"$gt": ["$$queueSize", 0]},
+                {"$slice": [objectsToProcessQueue, 1, {"$add": ["$$queueSize", 1]}]},
+                [],
+              ]},             
+              // Push the content of each field which is a child object or array to the end of the queue of elements to inspect
+              {"$cond": [
+                // MongoDB supports "100 levels of nesting for BSON documents" so no point in gong beyond that
+                {"$and": [{"$isArray": "$$currentObjectChildren"}, {"$lte": ["$$newDepthNumber", 100]}]},
+                // Loop through each field which is either a chold object or array of objects, adding each object to the queue
+                constructQueueMember("$$currentObjectChildren", "$$currentObjectIdx", "$$currentSubdocPath", "$$newDepthNumber"),                
+                [],
+              ]},             
+            ]            
+          }
+        }
+      }      
+    }
+  };
+}
+
+
+/**
+ * Macro to generate the aggregation expression to assembling all the fields for the schema
+ * metadata for an object (which will be either the root document or one of potentially many
+ * sub-documents
+ */
+function buildArrayOfSchemaMetadataFields(object, currentResultPosition) {
+  return [
+    // Capture the top level metadata for the object
+    [{"k": "id", "v": currentResultPosition}],
+    [{"k": "depth", "v": {"$getField": {"field": "depth", "input": object}}}],
+    [{"k": "index", "v": {"$getField": {"field": "index", "input": object}}}],
+    [{"k": "subdocpath", "v": {"$getField": {"field": "subdocpath", "input": object}}}],                  
+    
+    // Capture the schema for each field for this new object with its name, value and type
+    [{"k": "schema", "v": {
+      "$map": {
+        "input": {"$objectToArray": {"$getField": {"field": "subdoc", "input": object}}},
+        "as": "field",
+        "in": {
+          "fieldname": "$$field.k",
+          "fieldvalue": {"$switch": {
+                          "branches": [
+                            {"case": {"$eq": [{"$type": "$$field.v"}, "array"]}, "then": "<array>"},
+                            {"case": {"$eq": [{"$type": "$$field.v"}, "object"]}, "then": "<object>"},
+                          ],
+                          "default": "$$field.v",
+                        }},                                                                                                     
+          "fieldtype": {"$type": "$$field.v"},                                
+        }
+      }
+    }}], 
+  ];
+}
+
+
+/**
+ * Macro to generate the aggregation expression to find each field of the given object that maps to
+ * a value which is an array or a sub-document (object) and return only those fields, collected
+ * together in an array
+ */
+function getNestedChildrenOfSubdoc(subdoc) {
+  return {
+    // Loop through each field in the current object
+    "$reduce": {
+      "input": {"$objectToArray": subdoc},
+      "initialValue": [],
+      "in": {
+        "$concatArrays": [
+          "$$value",
+          {"$switch": {
+            "branches": [
+              // If there's one object hanging off this field, just add that with additional metadata
+              {"case": {"$eq": [{"$type": "$$this.v"}, "object"]}, "then": [{
+                "key" : "$$this.k", 
+                "value" : "$$this.v",
+              }]},
+              // If there's an array hanging off this field, unpack and add each array object with additional metadata
+              {"case": {"$eq": [{"$type": "$$this.v"}, "array"]}, "then": {
+                "$map": {
+                  "input": "$$this.v",
+                  "as": "element",
+                  "in": {
+                    "key" : "$$this.k",                                                                
+                    "value" : {"$cond": [{"$eq": [{"$type": "$$element"}, "object"]}, "$$element", {"<arrayitem>": "$$element"}]},
+                  }
+                }
+              }},
+            ],
+            // Otherwise this field does not correspond to an object or array so don't add the field in the result array
+            "default": [], 
+          }}            
+        ]
+      }
+    }
+  };
+}
+
+
+/**
+ * Create a wrapper object for adding to the queue capturing its depth, index, path and, hanging
+ * off a 'subdoc' field, the content itself
+ */
+function constructQueueMember(currentObjectChildren, currentObjectIdx, currentSubdocPath, newDepthNumber) {
+  return {
+    "$reduce": { 
+      "input": {"$range": [0, {"$size": currentObjectChildren}]},
+      "initialValue": [],
+      "in": {
+        "$let": {
+          "vars": { 
+            "childObject": {"$arrayElemAt": [currentObjectChildren, "$$this"]},
+            "subdocPathSeperator": {"$cond": [{"$gt": [{"$strLenCP": currentSubdocPath}, 0]}, ".", ""]},                        
+          },
+          "in": {              
+            "$concatArrays": [                            
+              "$$value",
+              [{
+                // Add metadata to the object being added to the list including the actual object itself (keyed 'subdoc')
+                "depth": newDepthNumber,
+                "index": {"$concat": [currentObjectIdx, "_", {"$toString": "$$this"}]},
+                "subdocpath": {"$concat": [currentSubdocPath, "$$subdocPathSeperator", {"$getField": {"field": "key", "input": "$$childObject"}}]},
+                "subdoc": {"$getField": {"field": "value", "input": "$$childObject"}},                    
+              }],
+            ]                
+          }
+        }                                
+      }
+    },                  
+  };
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////// TESTS //////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/**
+ * TEST: getNestedChildrenOfSubdoc
+ * Requires MongoDB version 5.1+
+ */ 
+function test_getNestedChildrenOfSubdoc_1() {
   const expectedResult = [
     {
       children: [
@@ -273,23 +289,23 @@ function test_nestedChildren_1() {
   ];
 
   const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_nestedChildren_1.name + "------\n");
+  print("\n\n----- " + test_getNestedChildrenOfSubdoc_1.name + "------\n");
   print("EXPECTED RESULT:");
   print(expectedResult);
   print("ACTUAL RESULT:");
   print(result);
 
   if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_nestedChildren_1.name + " - TEST FAILED";  
+    throw test_getNestedChildrenOfSubdoc_1.name + " - TEST FAILED";  
   }
 }
 
 
-//
-// TEST: buildObjectMetadata
-// Requires MongoDB version 5.1+
-// 
-function test_buildObjectMetadataArrays_1() {
+/**
+ * TEST: buildObjectMetadata
+ * Requires MongoDB version 5.1+
+ */ 
+function test_buildArrayOfSchemaMetadataFields_1() {
   const expectedResult = [
     {
       recordList: [
@@ -371,27 +387,114 @@ function test_buildObjectMetadataArrays_1() {
     
     {"$project": {
       "_id": 0,
-      "recordList": buildObjectMetadataArrays("$$ROOT", 1),
+      "recordList": buildArrayOfSchemaMetadataFields("$$ROOT", 1),
     }},    
   ];
 
   const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_buildObjectMetadataArrays_1.name + "------\n");
+  print("\n\n----- " + test_buildArrayOfSchemaMetadataFields_1.name + "------\n");
   print("EXPECTED RESULT:");
   print(expectedResult);
   print("ACTUAL RESULT:");
   print(result);
 
   if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_buildObjectMetadataArrays_1.name + " - TEST FAILED";  
+    throw test_buildArrayOfSchemaMetadataFields_1.name + " - TEST FAILED";  
   }
 }
 
 
-//
-// TEST: extractSchema
-// Requires MongoDB version 5.1+
-// 
+/**
+ * TEST: constructQueueMember
+ * Requires MongoDB version 5.1+
+ */ 
+function test_constructQueueMember_1() {
+  const expectedResult = [
+    {
+      recordList: [
+        {
+          depth: 1,
+          index: '1_0',
+          subdocpath: 'b',
+          subdoc: { '<arrayitem>': 1 }
+        },
+        {
+          depth: 1,
+          index: '1_1',
+          subdocpath: 'b',
+          subdoc: { '<arrayitem>': 2 }
+        },
+        {
+          depth: 1,
+          index: '1_2',
+          subdocpath: 'c',
+          subdoc: { a: 1, b: 2, c: 3 }
+        },
+        { depth: 1, index: '1_3', subdocpath: 'd', subdoc: { z: 3 } },
+        {
+          depth: 1,
+          index: '1_4',
+          subdocpath: 'e',
+          subdoc: { p: [ { q: 1 }, { r: 2 } ] }
+        }
+      ]
+    },
+    {
+      recordList: [
+        {
+          depth: 1,
+          index: '1_0',
+          subdocpath: 'b',
+          subdoc: { '<arrayitem>': 3 }
+        },
+        { depth: 1, index: '1_1', subdocpath: 'd', subdoc: { x: 1 } },
+        { depth: 1, index: '1_2', subdocpath: 'd', subdoc: { y: 2 } }
+      ]
+    }
+  ]
+
+  const pipeline = [
+    {"$documents": [
+      {"children": [
+          { key: 'b', value: { '<arrayitem>': 1 } },
+          { key: 'b', value: { '<arrayitem>': 2 } },
+          { key: 'c', value: { a: 1, b: 2, c: 3 } },
+          { key: 'd', value: { z: 3 } },
+          {
+            key: 'e',
+            value: { p: [ { q: 1 }, { r: 2 } ] }
+          }
+      ]},
+      {"children": [
+          { key: 'b', value: { '<arrayitem>': 3 } },
+          { key: 'd', value: { x: 1 } },
+          { key: 'd', value: { y: 2 } },
+      ]},
+    ]},
+
+    {"$project": {
+      "_id": 0,
+      "recordList": constructQueueMember("$children", "1", "", 1)
+    }},    
+  ];
+
+  const result = db.aggregate(pipeline).toArray();
+  print("\n\n----- " + test_constructQueueMember_1.name + "------\n");
+  print("EXPECTED RESULT:");
+  print(expectedResult);
+  print("ACTUAL RESULT:");
+  print(result);
+
+  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
+    throw test_constructQueueMember_1.name + " - TEST FAILED";  
+  }
+}
+
+
+/**
+ * TEST: extractSchema
+ * Requires MongoDB version 5.1+
+ */ 
 function test_extractSchema_1() {
   const expectedResult = [
     {
@@ -544,13 +647,14 @@ function test_extractSchema_1() {
 }
 
 
-//
-// Run All Tests
-// Requires MongoDB version 5.1+
-// 
+/**
+ * Run All Tests
+ * Requires MongoDB version 5.1+
+ */ 
 function runAllTests() {
-  test_nestedChildren_1();
-  test_buildObjectMetadataArrays_1();
+  test_getNestedChildrenOfSubdoc_1();
+  test_buildArrayOfSchemaMetadataFields_1();
+  test_constructQueueMember_1();
   test_extractSchema_1();
 }
 
