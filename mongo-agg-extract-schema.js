@@ -38,7 +38,7 @@ function extractSchema(maxElements=500) {
         // Add current sub-doc's metadata to result array 
         "content": captureCurrentObjectSchema("$$value.content", "$$value.objectsToProcessQueue", "$$this", maxElements),        
         // Add child objects of current sub-doc to the queue of array of items to be inspected later on (and remove the sub-doc just inspected)
-        "objectsToProcessQueue": addCurrentObjectsChildrenToQueue("$$value.objectsToProcessQueue"),
+        "objectsToProcessQueue": addChildrenOfCurrentObjectToQueue("$$value.objectsToProcessQueue"),
       }          
     }
   };
@@ -84,7 +84,7 @@ function captureCurrentObjectSchema(currentResultsArray, objectsToProcessQueue, 
  * the front of the queue and then add its direct children (if any) to the end of the queue, ready
  * to be processed in the future
  */
-function addCurrentObjectsChildrenToQueue(objectsToProcessQueue) {
+function addChildrenOfCurrentObjectToQueue(objectsToProcessQueue) {
   return {
     "$let": {
       "vars": { 
