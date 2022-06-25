@@ -42,10 +42,45 @@ function getNestedChildrenOfSubdoc(subdoc) {
 
 
 //
+// Macro to generate the aggregation expression to for assembling the top level metadata and schema
+// metadata for an object (which will be either the root document or one of potentially many
+// sub-documents
+//
+function buildObjectMetadataArrays(object, currentResultPosition) {
+  return [
+    // Capture the top level metadata for the object
+    [{"k": "id", "v": currentResultPosition}],
+    [{"k": "depth", "v": {"$getField": {"field": "depth", "input": object}}}],
+    [{"k": "index", "v": {"$getField": {"field": "index", "input": object}}}],
+    [{"k": "subdocpath", "v": {"$getField": {"field": "subdocpath", "input": object}}}],                  
+    
+    // Capture the schema for each field for this new object with its name, value and type
+    [{"k": "schema", "v": {
+      "$map": {
+        "input": {"$objectToArray": {"$getField": {"field": "subdoc", "input": object}}},
+        "as": "field",
+        "in": {
+          "fieldname": "$$field.k",
+          "fieldvalue": {"$switch": {
+                          "branches": [
+                            {"case": {"$eq": [{"$type": "$$field.v"}, "array"]}, "then": "<array>"},
+                            {"case": {"$eq": [{"$type": "$$field.v"}, "object"]}, "then": "<object>"},
+                          ],
+                          "default": "$$field.v",
+                        }},                                                                                                     
+          "fieldtype": {"$type": "$$field.v"},                                
+        }
+      }
+    }}], 
+  ];
+}
+
+
+//
 // Macro to generate the aggregation expression to get the next object (if any) from the start of
 // the queue and capture its metadata including path, data type and relative position data
 //
-function captureCurrentObjectMetadata(currentResultsArray, objectsToProcessQueue, maxElements) {
+function captureCurrentObjectMetadata(currentResultsArray, objectsToProcessQueue, currentResultPosition, maxElements) {
   return {
     "$let": {
       "vars": { 
@@ -60,34 +95,10 @@ function captureCurrentObjectMetadata(currentResultsArray, objectsToProcessQueue
             // Stop accumulating array elements if we have now reached the end of the list of nested sub-document objects
             {"$ifNull": ["$$currentObject", false]},
             {"$cond": [                     
-              {"$gte": ["$$this", maxElements]},
+              {"$gte": [currentResultPosition, maxElements]},
               [{"WARNING": "The 'maxElements' parameter wasn't set to a large enough value to fully traverse the document's nested content"}],
               [{"$arrayToObject": [
-                {"$concatArrays": [
-                  // Start the build of the new object in the result array with its metadata
-                  [{"k": "id", "v": "$$this"}],
-                  [{"k": "depth", "v": {"$getField": {"field": "depth", "input": "$$currentObject"}}}],
-                  [{"k": "index", "v": {"$getField": {"field": "index", "input": "$$currentObject"}}}],
-                  [{"k": "subdocpath", "v": {"$getField": {"field": "subdocpath", "input": "$$currentObject"}}}],                  
-                  // Capture the schema for each field for this new object with its name, value and type
-                  [{"k": "schema", "v": {
-                    "$map": {
-                      "input": {"$objectToArray": {"$getField": {"field": "subdoc", "input": "$$currentObject"}}},
-                      "as": "field",
-                      "in": {
-                        "fieldname": "$$field.k",
-                        "fieldvalue": {"$switch": {
-                                        "branches": [
-                                          {"case": {"$eq": [{"$type": "$$field.v"}, "array"]}, "then": "<array>"},
-                                          {"case": {"$eq": [{"$type": "$$field.v"}, "object"]}, "then": "<object>"},
-                                        ],
-                                        "default": "$$field.v",
-                                      }},                                                                                                     
-                        "fieldtype": {"$type": "$$field.v"},                                
-                      }
-                    }
-                  }}], 
-                ]}
+                {"$concatArrays": buildObjectMetadataArrays("$$currentObject", currentResultPosition)}
               ]}],                  
             ]},                         
             [], 
@@ -208,11 +219,338 @@ function extractSchema(maxElements=500) {
       },      
       "in": {       
         // Add current sub-doc's metadata to result array 
-        "content": captureCurrentObjectMetadata("$$value.content", "$$value.objectsToProcessQueue", maxElements),        
+        "content": captureCurrentObjectMetadata("$$value.content", "$$value.objectsToProcessQueue", "$$this", maxElements),        
         // Add child objects of current sub-doc to the queue of array of items to be inspected later on (and remove the sub-doc just inspected)
         "objectsToProcessQueue": addCurrentObjectsChildrenToQueue("$$value.objectsToProcessQueue"),
       }          
     }
   };
+}
+
+
+//
+// TEST: getNestedChildrenOfSubdoc
+// Requires MongoDB version 5.1+
+// 
+function test_nestedChildren_1() {
+  const expectedResult = [
+    {
+      children: [
+        { key: 'b', value: { '<arrayitem>': 1 } },
+        { key: 'b', value: { '<arrayitem>': 2 } },
+        { key: 'b', value: { '<arrayitem>': 3 } },
+        { key: 'c', value: { a: 1, b: 2, c: 3 } },
+        { key: 'd', value: { x: 1 } },
+        { key: 'd', value: { y: 2 } },
+        { key: 'd', value: { z: 3 } },
+        {
+          key: 'e',
+          value: { p: [ { q: 1 }, { r: 2 } ] }
+        }
+      ]
+    },
+    { children: [] }
+  ];
+
+  const pipeline = [
+    {"$documents": [
+      {
+        "a": 1,
+        "b": [1,2,3],
+        "c": {"a": 1, "b": 2, "c": 3},
+        "d": [{"x": 1}, {"y": 2}, {"z": 3}],
+        "e": [{"p": [{"q": 1}, {"r": 2}]}],
+      },
+      {
+        "other": true,
+      },
+    ]},
+    
+    {"$project": {
+      "_id": 0,
+      "children": getNestedChildrenOfSubdoc("$$ROOT"),
+    }},    
+  ];
+
+  const result = db.aggregate(pipeline).toArray();
+  print("\n\n----- " + test_nestedChildren_1.name + "------\n");
+  print("EXPECTED RESULT:");
+  print(expectedResult);
+  print("ACTUAL RESULT:");
+  print(result);
+
+  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
+    throw test_nestedChildren_1.name + " - TEST FAILED";  
+  }
+}
+
+
+//
+// TEST: buildObjectMetadata
+// Requires MongoDB version 5.1+
+// 
+function test_buildObjectMetadataArrays_1() {
+  const expectedResult = [
+    {
+      recordList: [
+        [ { k: 'id', v: 1 } ],
+        [ { k: 'depth', v: 1 } ],
+        [ { k: 'index', v: '0' } ],
+        [ { k: 'subdocpath', v: '' } ],
+        [
+          {
+            k: 'schema',
+            v: [
+              { fieldname: 'a', fieldvalue: 1, fieldtype: 'int' },
+              {
+                fieldname: 'b',
+                fieldvalue: '<array>',
+                fieldtype: 'array'
+              },
+              {
+                fieldname: 'c',
+                fieldvalue: '<object>',
+                fieldtype: 'object'
+              },
+              {
+                fieldname: 'd',
+                fieldvalue: '<array>',
+                fieldtype: 'array'
+              },
+              {
+                fieldname: 'e',
+                fieldvalue: '<array>',
+                fieldtype: 'array'
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      recordList: [
+        [ { k: 'id', v: 1 } ],
+        [ { k: 'depth', v: 2 } ],
+        [ { k: 'index', v: '0_1_2_3' } ],
+        [ { k: 'subdocpath', v: 'x.y.z' } ],
+        [
+          {
+            k: 'schema',
+            v: [
+              { fieldname: 'other', fieldvalue: true, fieldtype: 'bool' }
+            ]
+          }
+        ]
+      ]
+    }
+  ];
+  
+  const pipeline = [
+    {"$documents": [
+      {
+        "depth": 1,
+        "index": "0",
+        "subdocpath": "",
+        "subdoc": {                   
+          "a": 1,
+          "b": [1,2,3],
+          "c": {"a": 1, "b": 2, "c": 3},
+          "d": [{"x": 1}, {"y": 2}, {"z": 3}],
+          "e": [{"p": [{"q": 1}, {"r": 2}]}],
+        },
+      },
+      {
+        "depth": 2,
+        "index": "0_1_2_3",
+        "subdocpath": "x.y.z",
+        "subdoc": {                   
+          "other": true,
+        },
+      },
+    ]},
+    
+    {"$project": {
+      "_id": 0,
+      "recordList": buildObjectMetadataArrays("$$ROOT", 1),
+    }},    
+  ];
+
+  const result = db.aggregate(pipeline).toArray();
+  print("\n\n----- " + test_buildObjectMetadataArrays_1.name + "------\n");
+  print("EXPECTED RESULT:");
+  print(expectedResult);
+  print("ACTUAL RESULT:");
+  print(result);
+
+  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
+    throw test_buildObjectMetadataArrays_1.name + " - TEST FAILED";  
+  }
+}
+
+
+//
+// TEST: extractSchema
+// Requires MongoDB version 5.1+
+// 
+function test_extractSchema_1() {
+  const expectedResult = [
+    {
+      content: [
+        {
+          id: 0,
+          depth: 0,
+          index: '0',
+          subdocpath: '',
+          schema: [
+            { fieldname: 'a', fieldvalue: 1, fieldtype: 'int' },
+            { fieldname: 'b', fieldvalue: '<array>', fieldtype: 'array' },
+            {
+              fieldname: 'c',
+              fieldvalue: '<object>',
+              fieldtype: 'object'
+            },
+            { fieldname: 'd', fieldvalue: '<array>', fieldtype: 'array' },
+            { fieldname: 'e', fieldvalue: '<array>', fieldtype: 'array' }
+          ]
+        },
+        {
+          id: 1,
+          depth: 1,
+          index: '0_0',
+          subdocpath: 'b',
+          schema: [
+            { fieldname: '<arrayitem>', fieldvalue: 1, fieldtype: 'int' }
+          ]
+        },
+        {
+          id: 2,
+          depth: 1,
+          index: '0_1',
+          subdocpath: 'b',
+          schema: [
+            { fieldname: '<arrayitem>', fieldvalue: 2, fieldtype: 'int' }
+          ]
+        },
+        {
+          id: 3,
+          depth: 1,
+          index: '0_2',
+          subdocpath: 'b',
+          schema: [
+            { fieldname: '<arrayitem>', fieldvalue: 3, fieldtype: 'int' }
+          ]
+        },
+        {
+          id: 4,
+          depth: 1,
+          index: '0_3',
+          subdocpath: 'c',
+          schema: [
+            { fieldname: 'a', fieldvalue: 1, fieldtype: 'int' },
+            { fieldname: 'b', fieldvalue: 2, fieldtype: 'int' },
+            { fieldname: 'c', fieldvalue: 3, fieldtype: 'int' }
+          ]
+        },
+        {
+          id: 5,
+          depth: 1,
+          index: '0_4',
+          subdocpath: 'd',
+          schema: [ { fieldname: 'x', fieldvalue: 1, fieldtype: 'int' } ]
+        },
+        {
+          id: 6,
+          depth: 1,
+          index: '0_5',
+          subdocpath: 'd',
+          schema: [ { fieldname: 'y', fieldvalue: 2, fieldtype: 'int' } ]
+        },
+        {
+          id: 7,
+          depth: 1,
+          index: '0_6',
+          subdocpath: 'd',
+          schema: [ { fieldname: 'z', fieldvalue: 3, fieldtype: 'int' } ]
+        },
+        {
+          id: 8,
+          depth: 1,
+          index: '0_7',
+          subdocpath: 'e',
+          schema: [
+            { fieldname: 'p', fieldvalue: '<array>', fieldtype: 'array' }
+          ]
+        },
+        {
+          id: 9,
+          depth: 2,
+          index: '0_7_0',
+          subdocpath: 'e.p',
+          schema: [ { fieldname: 'q', fieldvalue: 1, fieldtype: 'int' } ]
+        },
+        {
+          id: 10,
+          depth: 2,
+          index: '0_7_1',
+          subdocpath: 'e.p',
+          schema: [ { fieldname: 'r', fieldvalue: 2, fieldtype: 'int' } ]
+        }
+      ],
+      objectsToProcessQueue: []
+    },
+    {
+      content: [
+        {
+          id: 0,
+          depth: 0,
+          index: '0',
+          subdocpath: '',
+          schema: [ { fieldname: 'other', fieldvalue: true, fieldtype: 'bool' } ]
+        }
+      ],
+      objectsToProcessQueue: []
+    }
+  ];
+
+  const pipeline = [
+    {"$documents": [
+      {
+        "a": 1,
+        "b": [1,2,3],
+        "c": {"a": 1, "b": 2, "c": 3},
+        "d": [{"x": 1}, {"y": 2}, {"z": 3}],
+        "e": [{"p": [{"q": 1}, {"r": 2}]}],
+      },
+      {
+        "other": true,
+      },
+    ]},
+
+    {"$replaceWith": 
+      extractSchema()
+    },
+  ];
+
+  const result = db.aggregate(pipeline).toArray();
+  print("\n\n----- " + test_extractSchema_1.name + "------\n");
+  print("EXPECTED RESULT:");
+  print(expectedResult);
+  print("ACTUAL RESULT:");
+  print(result);
+
+  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
+    throw test_extractSchema_1.name + " - TEST FAILED";  
+  }
+}
+
+
+//
+// Run All Tests
+// Requires MongoDB version 5.1+
+// 
+function runAllTests() {
+  test_nestedChildren_1();
+  test_buildObjectMetadataArrays_1();
+  test_extractSchema_1();
 }
 
