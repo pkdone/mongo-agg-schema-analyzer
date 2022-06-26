@@ -5,11 +5,11 @@
 DEFAULT_URL="mongodb://localhost:27017/test"
 : "${URL:=${DEFAULT_URL}}"
 
-printf "Connecting mongosh to: ${URL}\n\n"
+printf "STARTING TESTS, CONNECTING TO: ${URL}\n\n"
 
 mongosh ${URL} --eval "
   load('mongo-agg-extract-schema.js');
   runAllTests();
 "
 
-printf "FINISHED SUCCESSFULLY\n"
+printf "TESTS ALL EXECUTED SUCCESSFULLY\n"

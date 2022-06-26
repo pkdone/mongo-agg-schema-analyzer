@@ -255,11 +255,12 @@ function constructQueueMember(currentObjectChildren, currentObjectIdx, currentSu
  */ 
 function runAggPipelineAndErrorIfDifferent(funcName, pipeline, expectedResult) {
   const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_getNestedChildrenOfSubdoc_1.name + "------\n");
+  print(`\n\n----- ${funcName} ------\n`);
   print("EXPECTED RESULT:");
   print(expectedResult);
   print("ACTUAL RESULT:");
   print(result);
+  print();
 
   if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
     throw `${funcName} - TEST FAILED`;  
