@@ -493,7 +493,7 @@ db.mydata.aggregate(pipeline);
 
 ## Execute The Unit Tests
 
-To run the unit tests, execute the following from a terminal, ensuring you first export the variable `URL` to match the location of your running MongoDB deployment:
+To run the unit tests, execute the following from a terminal, ensuring you first set the value of the URL variable to export to match the location of your running MongoDB deployment:
 
 ```console
 export URL="mongodb+srv://myuser:mypasswd@mycluster.abc.mongodb.net/test"
