@@ -500,3 +500,5 @@ export URL="mongodb+srv://myuser:mypasswd@mycluster.abc.mongodb.net/test"
 ./run-tests.sh
 ```
 
+> _Note, these tests only work on MongoDB version 5.1 or greater due to the use of the newer [$documents](https://www.mongodb.com/docs/v6.0/reference/operator/aggregation/documents/) stage_
+
