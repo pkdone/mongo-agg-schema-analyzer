@@ -45,6 +45,11 @@ function extractSchema(maxElements=500) {
 }
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////// SUPPORTING FUNCTIONS //////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 /**
  * Macro to generate the aggregation expression to get the next object (if any) from the start of
  * the queue and capture its schema metadata including path, data type and relative position data
@@ -245,6 +250,24 @@ function constructQueueMember(currentObjectChildren, currentObjectIdx, currentSu
 
 
 /**
+ * Run an aggregation pipeline and compare its result with the expected result, throwing an error
+ * if different
+ */ 
+function runAggPipelineAndErrorIfDifferent(funcName, pipeline, expectedResult) {
+  const result = db.aggregate(pipeline).toArray();
+  print("\n\n----- " + test_getNestedChildrenOfSubdoc_1.name + "------\n");
+  print("EXPECTED RESULT:");
+  print(expectedResult);
+  print("ACTUAL RESULT:");
+  print(result);
+
+  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
+    throw `${funcName} - TEST FAILED`;  
+  }
+}
+
+
+/**
  * TEST: getNestedChildrenOfSubdoc
  * Requires MongoDB version 5.1+
  */ 
@@ -288,16 +311,7 @@ function test_getNestedChildrenOfSubdoc_1() {
     }},    
   ];
 
-  const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_getNestedChildrenOfSubdoc_1.name + "------\n");
-  print("EXPECTED RESULT:");
-  print(expectedResult);
-  print("ACTUAL RESULT:");
-  print(result);
-
-  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_getNestedChildrenOfSubdoc_1.name + " - TEST FAILED";  
-  }
+  runAggPipelineAndErrorIfDifferent(test_getNestedChildrenOfSubdoc_1.name, pipeline, expectedResult);
 }
 
 
@@ -391,16 +405,7 @@ function test_buildArrayOfSchemaMetadataFields_1() {
     }},    
   ];
 
-  const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_buildArrayOfSchemaMetadataFields_1.name + "------\n");
-  print("EXPECTED RESULT:");
-  print(expectedResult);
-  print("ACTUAL RESULT:");
-  print(result);
-
-  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_buildArrayOfSchemaMetadataFields_1.name + " - TEST FAILED";  
-  }
+  runAggPipelineAndErrorIfDifferent(test_buildArrayOfSchemaMetadataFields_1.name, pipeline, expectedResult);
 }
 
 
@@ -478,16 +483,7 @@ function test_constructQueueMember_1() {
     }},    
   ];
 
-  const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_constructQueueMember_1.name + "------\n");
-  print("EXPECTED RESULT:");
-  print(expectedResult);
-  print("ACTUAL RESULT:");
-  print(result);
-
-  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_constructQueueMember_1.name + " - TEST FAILED";  
-  }
+  runAggPipelineAndErrorIfDifferent(test_constructQueueMember_1.name, pipeline, expectedResult);  
 }
 
 
@@ -634,16 +630,7 @@ function test_extractSchema_1() {
     },
   ];
 
-  const result = db.aggregate(pipeline).toArray();
-  print("\n\n----- " + test_extractSchema_1.name + "------\n");
-  print("EXPECTED RESULT:");
-  print(expectedResult);
-  print("ACTUAL RESULT:");
-  print(result);
-
-  if (JSON.stringify(result) != JSON.stringify(expectedResult)) {
-    throw test_extractSchema_1.name + " - TEST FAILED";  
-  }
+  runAggPipelineAndErrorIfDifferent(test_extractSchema_1.name, pipeline, expectedResult);    
 }
 
 
