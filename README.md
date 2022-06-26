@@ -473,7 +473,7 @@ For the sample data set, the executed pipeline should yield the following result
 &nbsp;
 
 
-## Running The 'Raw' Extract Schema Function
+## Run The 'Raw' Extract Schema Function
 
 If you only want to execute the `extractSchema()` function with a minimal aggregation pipeline to just see the function's raw output, run:
 
