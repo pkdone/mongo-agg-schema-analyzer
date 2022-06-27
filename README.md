@@ -219,7 +219,7 @@ db.mydata.aggregate(pipeline);
 
 ```
 
-> _Note, change the name of the collection from `mydata` to the name of your collection in the `aggregate()` command if you are not using the mock data set._
+> _Note, above, change the collection name from `mydata` to the name of your collection in the `aggregate()` command above if you are not using the mock data set._
 
 &nbsp;
 
