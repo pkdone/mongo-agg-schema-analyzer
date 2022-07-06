@@ -1,6 +1,6 @@
 /**
- * Macro to generate a MongoDB Aggregation expression to introspect a collection of documents and 
- * infer its schema. The generated aggregation expression will construct the outline schema by
+ * Macro to generate the MongoDB Aggregation expressions to introspect a collection of documents
+ * and infer its schema. The generated aggregation expression will construct the outline schema by
  * inspecting a collection's documents, even where some or all are composed of a complex nested
  * hierarchy of sub-documents. It descends through each document's nested fields collecting each
  * sub-document and associated metadata into a flattened array of elements in the result.
@@ -51,7 +51,7 @@ function extractSchema(maxElements=500) {
 
 
 /**
- * Macro to generate the aggregation expression to get the next object (if any) from the start of
+ * Macro to generate the aggregation expressions to get the next object (if any) from the start of
  * the queue and capture its schema metadata including path, data type and relative position data
  */
 function captureCurrentObjectSchema(currentResultsArray, objectsToProcessQueue, currentResultPosition, maxElements) {
@@ -85,7 +85,7 @@ function captureCurrentObjectSchema(currentResultsArray, objectsToProcessQueue, 
 
 
 /**
- * Macro to generate the aggregation expression to trim the first element, just inspected, from
+ * Macro to generate the aggregation expressions to trim the first element, just inspected, from
  * the front of the queue and then add its direct children (if any) to the end of the queue, ready
  * to be processed in the future
  */
@@ -133,7 +133,7 @@ function addChildrenOfCurrentObjectToQueue(objectsToProcessQueue) {
 
 
 /**
- * Macro to generate the aggregation expression to assembling all the fields for the schema
+ * Macro to generate the aggregations expression to assembling all the fields for the schema
  * metadata for an object (which will be either the root document or one of potentially many
  * sub-documents
  */
@@ -168,8 +168,8 @@ function buildArrayOfSchemaMetadataFields(object, currentResultPosition) {
 
 
 /**
- * Macro to generate the aggregation expression to find each field of the given object that maps to
- * a value which is an array or a sub-document (object) and return only those fields, collected
+ * Macro to generate the aggregation expressions to find each field of the given object that maps
+ * to a value which is an array or a sub-document (object) and return only those fields, collected
  * together in an array
  */
 function getNestedChildrenOfSubdoc(subdoc) {
@@ -211,8 +211,8 @@ function getNestedChildrenOfSubdoc(subdoc) {
 
 
 /**
- * Create a wrapper object for adding to the queue capturing its depth, index, path and, hanging
- * off a 'subdoc' field, the content itself
+ * Macro to generate the MongoDB Aggregation expressions to create a wrapper object for adding to
+ * the queue capturing its depth, index, path and, hanging off a 'subdoc' field, the content itself
  */
 function constructQueueMember(currentObjectChildren, currentObjectIdx, currentSubdocPath, newDepthNumber) {
   return {
