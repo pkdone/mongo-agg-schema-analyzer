@@ -5,7 +5,7 @@
 DEFAULT_URL="mongodb://localhost:27017/test"
 : "${URL:=${DEFAULT_URL}}"
 
-printf "STARTING TESTS, CONNECTING TO: ${URL}\n\n"
+printf "STARTING TESTS, CONNECTING TO: ${URL}\n"
 
 mongosh ${URL} --eval "
   load('mongo-agg-extract-schema.js');
